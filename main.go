@@ -70,7 +70,25 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := http.ListenAndServe(":8080", http.HandlerFunc(proxy))
+	// initialize interceptor
+	interceptor, err := newIntercepter()
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() {
+		err = interceptor.serve()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	err = http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "CONNECT" {
+			interceptor.intercept(w, r)
+		} else {
+			forward(w, r)
+		}
+	}))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
