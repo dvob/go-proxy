@@ -1,21 +1,22 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"os"
 )
 
-func logRequest(r *http.Request) {
-	requestDump, err := httputil.DumpRequest(r, false)
-	if err != nil {
-		requestDump = []byte("failed to dump request")
+func logRequest(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		requestDump, err := httputil.DumpRequest(r, false)
+		if err != nil {
+			requestDump = []byte("failed to dump request")
+		}
+		log.Printf("url=%s\n%s", r.URL, requestDump)
+		next.ServeHTTP(w, r)
 	}
-	log.Printf("scheme=%s host=%s path=%s\n%s", r.URL.Scheme, r.URL.Host, r.URL.Path, requestDump)
 }
 
 func tunnel(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +47,6 @@ func tunnel(w http.ResponseWriter, r *http.Request) {
 }
 
 func forward(w http.ResponseWriter, r *http.Request) {
-	logRequest(r)
 	resp, err := http.DefaultTransport.RoundTrip(r)
 	if err != nil {
 		log.Print(err)
@@ -70,27 +70,26 @@ func proxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	// initialize interceptor
-	interceptor, err := newIntercepter()
+	certGen, err := newCertGenerator("proxy-ca.crt", "proxy-ca.key")
 	if err != nil {
 		log.Fatal(err)
 	}
-	go func() {
-		err = interceptor.serve()
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+
+	logAndForward := logRequest(forward)
+
+	connectHandler := newInterceptHandler(certGen.Get, logAndForward)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	err = http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "CONNECT" {
-			interceptor.intercept(w, r)
+			connectHandler.ServeHTTP(w, r)
 		} else {
-			forward(w, r)
+			logAndForward(w, r)
 		}
 	}))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 }
