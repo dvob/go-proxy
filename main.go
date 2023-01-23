@@ -84,15 +84,27 @@ func main() {
 		return
 	}
 
+	certGen, err := newCertGenerator(caCertFile, caKeyFile)
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
+	connectHandler := newInterceptHandler(certGen.Get, logRequest(forward))
+	if err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+
 	handler := logRequest(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "CONNECT" {
-			tunnel(w, r)
+			connectHandler.ServeHTTP(w, r)
 		} else {
 			forward(w, r)
 		}
 	})
 
-	err := http.ListenAndServe(":8080", http.HandlerFunc(handler))
+	err = http.ListenAndServe(":8080", http.HandlerFunc(handler))
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
