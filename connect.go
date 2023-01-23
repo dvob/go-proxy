@@ -7,15 +7,15 @@ import (
 	"net/http"
 )
 
-type GetCertFunc func(hostname string) (*tls.Config, error)
+type getCertFn func(hostname string) (*tls.Config, error)
 
 type interceptHandler struct {
 	listener channelListener
 	server   *http.Server
-	getCert  GetCertFunc
+	getCert  getCertFn
 }
 
-func newInterceptHandler(getCertFn GetCertFunc, innerHandler http.HandlerFunc) *interceptHandler {
+func newInterceptHandler(getCert getCertFn, innerHandler http.HandlerFunc) *interceptHandler {
 	server := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.URL.Scheme = "https"
@@ -34,7 +34,7 @@ func newInterceptHandler(getCertFn GetCertFunc, innerHandler http.HandlerFunc) *
 	return &interceptHandler{
 		listener: listener,
 		server:   server,
-		getCert:  getCertFn,
+		getCert:  getCert,
 	}
 }
 
@@ -47,18 +47,20 @@ func (i *interceptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tlsConfig, err := i.getCert(host)
-	// tlsConfig.NextProtos = []string{"h2", "http/1.1"}
 	if err != nil {
 		log.Println("failed to obtain tls config:", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	hj, ok := w.(http.Hijacker)
 	if !ok {
-		panic("hijack of connection failed")
+		log.Print("hijack of connection failed")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
+
+	w.WriteHeader(http.StatusOK)
 
 	clientConn, _, err := hj.Hijack()
 	if err != nil {
