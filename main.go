@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"strings"
 )
 
 func logRequest(next http.HandlerFunc) http.HandlerFunc {
@@ -70,9 +71,11 @@ func main() {
 		doCreateCA bool
 		caCertFile = "proxy-ca.crt"
 		caKeyFile  = "proxy-ca.key"
+		blockList  string
 	)
 
 	flag.BoolVar(&doCreateCA, "create-ca", false, "create a CA for the proxy")
+	flag.StringVar(&blockList, "block-list", blockList, "comma-separated list of hostnames which will be blocked")
 	flag.Parse()
 
 	if doCreateCA {
@@ -90,7 +93,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	connectHandler := newInterceptHandler(certGen.Get, logRequest(forward))
+	forwardHandler := forward
+
+	if blockList != "" {
+		blockedHosts := strings.Split(blockList, ",")
+		forwardHandler = blockHostFilter(blockedHosts, forwardHandler)
+	}
+
+	connectHandler := newInterceptHandler(certGen.Get, logRequest(forwardHandler))
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
@@ -100,7 +110,7 @@ func main() {
 		if r.Method == "CONNECT" {
 			connectHandler.ServeHTTP(w, r)
 		} else {
-			forward(w, r)
+			forwardHandler(w, r)
 		}
 	})
 
