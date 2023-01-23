@@ -4,8 +4,17 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"os"
 )
+
+func logRequest(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		requestDump, _ := httputil.DumpRequest(r, false)
+		log.Printf("url=%s\n%s", r.URL, requestDump)
+		next.ServeHTTP(w, r)
+	}
+}
 
 func forward(w http.ResponseWriter, r *http.Request) {
 	resp, err := http.DefaultTransport.RoundTrip(r)
@@ -24,7 +33,9 @@ func forward(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := http.ListenAndServe(":8080", http.HandlerFunc(forward))
+	handler := logRequest(forward)
+
+	err := http.ListenAndServe(":8080", http.HandlerFunc(handler))
 	if err != nil {
 		log.Print(err)
 		os.Exit(1)
