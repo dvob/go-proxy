@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"log"
 	"net"
@@ -65,6 +66,24 @@ func forward(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var (
+		doCreateCA bool
+		caCertFile = "proxy-ca.crt"
+		caKeyFile  = "proxy-ca.key"
+	)
+
+	flag.BoolVar(&doCreateCA, "create-ca", false, "create a CA for the proxy")
+	flag.Parse()
+
+	if doCreateCA {
+		err := createCA(caCertFile, caKeyFile)
+		if err != nil {
+			log.Print(err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	handler := logRequest(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "CONNECT" {
 			tunnel(w, r)
